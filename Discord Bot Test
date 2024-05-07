@@ -1,0 +1,62 @@
+import discord
+from discord.ext import commands
+import youtube_dl
+
+# Configuro el bot y el cliente
+bot = commands.Bot(command_prefix='!')
+
+# Configuración del reproductor de música
+class MusicPlayer(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        self.is_playing = False
+        self.queue = []
+        self.voice_channel = None
+        self.current_song = None
+        self.voice_client = None
+
+    async def play_next(self):
+        if len(self.queue) > 0:
+            self.is_playing = True
+            song_url = self.queue.pop(0)
+            self.current_song = song_url
+
+            # Descargar la canción usando youtube_dl
+            ydl_opts = {'format': 'bestaudio'}
+            with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(song_url, download=False)
+                url2 = info['formats'][0]['url']
+
+            # Conectar al canal de voz y reproducir la canción
+            if self.voice_client is None or not self.voice_client.is_connected():
+                self.voice_client = await self.voice_channel.connect()
+            self.voice_client.play(discord.FFmpegPCMAudio(url2), after=lambda e: self.bot.loop.create_task(self.play_next()))
+
+        else:
+            self.is_playing = False
+            await self.voice_client.disconnect()
+    
+    @commands.command(name='play', help='Reproduce una canción desde YouTube.')
+    async def play(self, ctx, url):
+        if self.is_playing:
+            await ctx.send("Ya se está reproduciendo música.")
+            return
+        
+        self.voice_channel = ctx.author.voice.channel
+        self.queue.append(url)
+
+        if not self.voice_client or not self.voice_client.is_connected():
+            self.voice_client = await self.voice_channel.connect()
+
+        await self.play_next()
+
+# Agregar el módulo de música al bot
+bot.add_cog(MusicPlayer(bot))
+
+# Iniciar el bot
+@bot.event
+async def on_ready():
+    print(f'Bot conectado como {bot.user}')
+
+# Token del bot (reemplaza 'YOUR_DISCORD_BOT_TOKEN' con tu token real)
+bot.run('YOUR_DISCORD_BOT_TOKEN')
